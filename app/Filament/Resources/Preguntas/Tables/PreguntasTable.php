@@ -2,10 +2,13 @@
 
 namespace App\Filament\Resources\Preguntas\Tables;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class PreguntasTable
@@ -34,13 +37,13 @@ class PreguntasTable
                     ->searchable(),
                 TextColumn::make('grado_dificultad')
                     ->label('Dificultad')
-                    ->formatStateUsing(fn (?int $state): string => match ($state) {
-                        1 => 'Facil',
-                        2 => 'Normal',
-                        3 => 'Dificil',
-                        default => '-',
-                    })
+                    ->formatStateUsing(fn (?string $state): string => $state ?: '-')
                     ->sortable(),
+                TextColumn::make('esta_sorteada')
+                    ->label('Estado sorteo')
+                    ->badge()
+                    ->color(fn ($state): string => ((int) $state) === 1 ? 'warning' : 'gray')
+                    ->formatStateUsing(fn ($state): string => ((int) $state) === 1 ? 'Sorteada' : 'No sorteada'),
                 TextColumn::make('ruta')
                     ->label('Ruta')
                     ->searchable()
@@ -56,7 +59,35 @@ class PreguntasTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('asignatura_id')
+                    ->label('Asignatura')
+                    ->relationship('asignatura', 'nombre')
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('grado_dificultad')
+                    ->label('Dificultad')
+                    ->options([
+                        'Facil' => 'Facil',
+                        'Normal' => 'Normal',
+                        'Dificil' => 'Dificil',
+                    ]),
+
+                SelectFilter::make('estado_sorteo')
+                    ->label('Estado de sorteo')
+                    ->options([
+                        'si' => 'Sorteadas',
+                        'no' => 'No sorteadas',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $valor = $data['value'] ?? null;
+
+                        return match ($valor) {
+                            'si' => $query->whereIn('idpregunta', DB::table('preguntas_sorteadas')->select('id_pregunta')),
+                            'no' => $query->whereNotIn('idpregunta', DB::table('preguntas_sorteadas')->select('id_pregunta')),
+                            default => $query,
+                        };
+                    }),
             ])
             ->recordActions([
                 EditAction::make(),

@@ -65,11 +65,11 @@
 
                     <div class="gs-actions">
                         <x-filament::button wire:click="confirmarExamen" color="success" class="w-full" icon="heroicon-o-check-circle">
-                            Confirmar examen
+                            Confirmar preguntas
                         </x-filament::button>
 
                         <x-filament::button wire:click="refrescarYEnviarPreguntas" color="warning" class="w-full" icon="heroicon-o-arrow-path">
-                            Refrescar y enviar preguntas
+                            Confirmar examen
                         </x-filament::button>
                     </div>
                 </div>
@@ -106,9 +106,9 @@
                             <span class="gs-label">Dificultad <span style="color:#dc2626">*</span></span>
                             <select wire:model="gradoDificultad" class="gs-input" required>
                                 <option value="">Selecciona...</option>
-                                <option value="1">Facil</option>
-                                <option value="2">Normal</option>
-                                <option value="3">Dificil</option>
+                                <option value="Facil">Facil</option>
+                                <option value="Normal">Normal</option>
+                                <option value="Dificil">Dificil</option>
                             </select>
                             @error('grado_dificultad')
                                 <div style="margin-top:.35rem; font-size:.78rem; color:#dc2626;">{{ $message }}</div>
@@ -136,62 +136,102 @@
             </section>
         </div>
 
-        <section class="gs-card">
-            <div class="gs-header">
-                <div>
-                    <div class="gs-title">3) Preguntas sorteadas (temporal)</div>
-                    <div class="gs-muted">Revisa y elimina preguntas antes de confirmar el examen.</div>
+        <div style="display:grid; gap: 1rem;">
+            <section class="gs-card">
+                <div class="gs-header">
+                    <div>
+                        <div class="gs-title">3) Preguntas sorteadas (temporal)</div>
+                        <div class="gs-muted">Revisa y elimina preguntas antes de confirmar el examen.</div>
+                    </div>
+
+                    <span class="gs-chip">Total: {{ $this->cantidadEnSorteo }}</span>
                 </div>
 
-                <span class="gs-chip">Total: {{ $this->cantidadEnSorteo }}</span>
-            </div>
+                <div class="gs-table-wrap">
+                    <table class="gs-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Asignatura</th>
+                                <th>Dificultad</th>
+                                <th>Capítulo</th>
+                                <th>Ruta</th>
+                                <th style="text-align:right;">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse ($this->sorteoTemporal as $row)
+                                <tr>
+                                    <td>{{ $row['idpregunta'] }}</td>
+                                    <td>{{ $row['asignatura'] ?? '-' }}</td>
+                                    <td>{{ $row['grado_dificultad'] ?? '-' }}</td>
+                                    <td>{{ $row['capitulo'] ?? '-' }}</td>
+                                    <td>{{ $row['ruta'] ?? '-' }}</td>
+                                    <td style="text-align:right;">
+                                        <x-filament::button color="danger" size="xs" wire:click="quitarDelSorteo({{ $row['idpregunta'] }})">
+                                            Quitar
+                                        </x-filament::button>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="6" style="text-align:center; padding: 1.25rem; color: #6b7280;">
+                                        Aún no hay preguntas sorteadas.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
-            <div class="gs-table-wrap">
-                <table class="gs-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Asignatura</th>
-                            <th>Dificultad</th>
-                            <th>Capítulo</th>
-                            <th>Ruta</th>
-                            <th style="text-align:right;">Acción</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($this->sorteoTemporal as $row)
+            <section class="gs-card">
+                <div class="gs-header">
+                    <div>
+                        <div class="gs-title">4) Examen sorteado (editable antes de finalizar)</div>
+                        <div class="gs-muted">Solo muestra las preguntas ya enviadas a examen_sorteado. Puedes quitar antes de confirmar examen.</div>
+                    </div>
+
+                    <span class="gs-chip">Total: {{ $this->cantidadEnExamenSorteado }}</span>
+                </div>
+
+                <div class="gs-table-wrap">
+                    <table class="gs-table">
+                        <thead>
                             <tr>
-                                <td>{{ $row['idpregunta'] }}</td>
-                                <td>{{ $row['asignatura'] ?? '-' }}</td>
-                                <td>
-                                    @if (($row['grado_dificultad'] ?? null) === 1)
-                                        Facil
-                                    @elseif (($row['grado_dificultad'] ?? null) === 2)
-                                        Normal
-                                    @elseif (($row['grado_dificultad'] ?? null) === 3)
-                                        Dificil
-                                    @else
-                                        -
-                                    @endif
-                                </td>
-                                <td>{{ $row['capitulo'] ?? '-' }}</td>
-                                <td>{{ $row['ruta'] ?? '-' }}</td>
-                                <td style="text-align:right;">
-                                    <x-filament::button color="danger" size="xs" wire:click="quitarDelSorteo({{ $row['idpregunta'] }})">
-                                        Quitar
-                                    </x-filament::button>
-                                </td>
+                                <th>ID</th>
+                                <th>Codificación</th>
+                                <th>Asignatura</th>
+                                <th>Dificultad</th>
+                                <th>Capítulo</th>
+                                <th style="text-align:right;">Acción</th>
                             </tr>
-                        @empty
-                            <tr>
-                                <td colspan="6" style="text-align:center; padding: 1.25rem; color: #6b7280;">
-                                    Aún no hay preguntas sorteadas.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                        </thead>
+                        <tbody>
+                            @forelse ($this->examenSorteado as $row)
+                                <tr>
+                                    <td>{{ $row['idpregunta'] }}</td>
+                                    <td>{{ $row['codificacion'] ?? '-' }}</td>
+                                    <td>{{ $row['asignatura_nombre'] ?? '-' }}</td>
+                                    <td>{{ $row['grado_dificultad'] ?? '-' }}</td>
+                                    <td>{{ $row['capitulo'] ?? '-' }}</td>
+                                    <td style="text-align:right;">
+                                        <x-filament::button color="danger" size="xs" wire:click="quitarDeExamenSorteado({{ $row['idpregunta'] }})">
+                                            Quitar
+                                        </x-filament::button>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="6" style="text-align:center; padding: 1.25rem; color: #6b7280;">
+                                        Aún no hay preguntas en examen_sorteado para el examen seleccionado.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
     </div>
 </x-filament-panels::page>

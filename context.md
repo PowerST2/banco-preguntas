@@ -1,222 +1,135 @@
 # Contexto del proyecto: Banco de Preguntas
 
 ## 1. Resumen funcional
-Este proyecto implementa un sistema para:
+Sistema Laravel + Filament para:
 
-- Registrar preguntas por metadatos (sin guardar el enunciado completo en base de datos).
-- Crear exámenes/procesos.
-- Sortear preguntas por criterios de clasificación.
-- Revisar y ajustar manualmente el sorteo temporal.
-- Confirmar un examen sorteado.
-- Registrar preguntas utilizadas históricamente para evitar reutilización.
-
-La aplicación está construida con Laravel + Filament (panel administrativo).
+- Registrar preguntas por metadatos (sin guardar enunciado completo en BD).
+- Gestionar exámenes (`nombre` + `proceso`).
+- Sortear preguntas con filtros académicos.
+- Confirmar preguntas a `examen_sorteado`.
+- Confirmar examen final a `preguntas_sorteadas` y `examenes_historico`.
+- Extraer preguntas usadas por examen (ZIP cliente o copia en servidor).
 
 ---
 
-## 2. Stack tecnológico
+## 2. Stack
 
-- Backend: Laravel 13
-- Panel admin: Filament 4
-- Base de datos: PostgreSQL
-- PHP: 8.3+
+- Laravel 13
+- Filament 4
+- PostgreSQL
+- PHP 8.4
 
 ---
 
-## 3. Modelo de datos principal
+## 3. Modelo de datos vigente
 
 ### Tablas base
 
 #### `asignaturas`
-- `id`
-- `nombre` (único)
-- `timestamps`
+- `id`, `nombre`, `timestamps`
 
 #### `examenes`
-- `id`
-- `nombre` (único)
-- `proceso` (nombre del proceso)
-- `timestamps`
+- `id`, `nombre`, `proceso`, `timestamps`
 
 #### `preguntas`
 - `idpregunta` (PK)
-- `codificacion`
-- `asignatura_id` (FK)
-- `capitulo`
-- `tema`
-- `sub_tema`
-- `grado_dificultad` (1,2,3)
-- `clave`
-- `proceso`
-- `ruta`
+- `codificacion` (**única en lógica de formulario/importación**)
+- `asignatura_id`, `capitulo`, `tema`, `sub_tema`
+- `grado_dificultad` (**texto:** `Facil|Normal|Dificil`)
+- `clave`, `proceso`, `ruta`
 - `timestamps`
 
-> Nota: el contenido completo de la pregunta no se guarda en BD. La referencia principal es `ruta`, donde están los archivos físicos de la pregunta.
+> `ruta` apunta al directorio físico de la pregunta (archivos, imágenes, recursos).
 
-### Tablas de flujo de sorteo
+### Tablas de flujo
 
 #### `sorteo_temporal`
-Tabla temporal de trabajo para selección previa a confirmar examen.
-
-- `idpregunta`
-- `asignatura`
-- `grado_dificultad`
-- `capitulo`
-- `ruta`
-- `timestamps`
+- staging del sorteo previo a confirmar preguntas.
 
 #### `examen_sorteado`
-Persistencia intermedia de preguntas confirmadas para un examen.
-
-- `id`
-- `examen_id` (FK)
-- `idpregunta`
-- `codificacion`
-- `asignatura_id` (FK)
-- `capitulo`
-- `tema`
-- `sub_tema`
-- `grado_dificultad`
-- `clave`
-- `proceso`
-- `ruta`
-- `timestamps`
-
-Incluye índices y unicidad por (`examen_id`, `idpregunta`).
+- preguntas ya confirmadas para un examen.
+- unicidad por (`examen_id`, `idpregunta`).
 
 #### `preguntas_sorteadas`
-Histórico simple de preguntas ya usadas.
+- histórico simple de preguntas usadas (`id_pregunta` único).
 
-- `id`
-- `id_pregunta` (único)
-- `timestamps`
+#### `examenes_historico`
+- snapshot detallado de preguntas usadas por examen/proceso al confirmar examen.
 
 ---
 
-## 4. Lógica de negocio implementada
+## 4. Lógica actual
 
-## 4.1 Registro de preguntas
-Se registran metadatos:
-
-- Asignatura
-- Capítulo
-- Tema/Subtema
-- Dificultad
-- Ruta
-- Datos de apoyo (`codificacion`, `clave`, etc.)
+### 4.1 Registro de preguntas
 
 Validaciones clave:
+- `codificacion` requerida y no duplicada.
+- `capitulo` requerido (numérico de al menos 2 dígitos).
+- `grado_dificultad` requerido (`Facil`, `Normal`, `Dificil`).
 
-- `capitulo` obligatorio, formato numérico de al menos 2 dígitos (ej. 01, 02, 10, 25, ...)
-- `grado_dificultad` obligatorio
-- dificultad visible como: Facil / Normal / Dificil (sin tildes)
+Importación masiva Excel:
+- valida estructura de columnas esperadas.
+- detecta duplicados de `codificacion` dentro del archivo y contra BD.
+- convierte dificultad a texto estándar.
 
-## 4.2 Creación de exámenes
-Cada examen tiene:
+### 4.2 Sorteo y confirmación
 
-- `nombre` (identificador del examen)
-- `proceso` (nombre del proceso asociado)
+En `Gestión de sorteo de examen`:
 
-## 4.3 Sorteo de preguntas
-La pantalla de gestión de sorteo permite seleccionar:
+1. **Ejecutar sorteo**
+   - filtra por asignatura/capítulo/dificultad/(tema opcional).
+   - excluye siempre `preguntas_sorteadas`.
+   - llena `sorteo_temporal`.
 
-- Asignatura (obligatorio)
-- Capítulo (obligatorio)
-- Grado de dificultad (obligatorio)
-- Tema (opcional)
-- Cantidad de preguntas (obligatorio)
+2. **Confirmar preguntas** (botón verde)
+   - mueve de `sorteo_temporal` a `examen_sorteado` del examen elegido.
+   - limpia `sorteo_temporal`.
 
-Reglas de selección:
+3. **Confirmar examen** (botón amarillo)
+   - toma `examen_sorteado` del examen elegido.
+   - guarda en `examenes_historico`.
+   - guarda IDs en `preguntas_sorteadas`.
+   - limpia `examen_sorteado` del examen y limpia `sorteo_temporal`.
 
-1. Consulta `preguntas` por filtros.
-2. Excluye preguntas ya presentes en `sorteo_temporal`.
-3. Excluye SIEMPRE preguntas ya usadas de `preguntas_sorteadas`.
-4. Selecciona aleatoriamente según cantidad.
-5. Inserta resultado en `sorteo_temporal`.
+### 4.3 Histórico de exámenes
 
-## 4.4 Revisión manual
-En la misma pantalla, el usuario puede:
+Vista dedicada:
+- panel izquierdo: exámenes históricos (nombre + proceso).
+- panel derecho: detalle de preguntas del examen seleccionado.
 
-- Visualizar listado de `sorteo_temporal`.
-- Quitar preguntas puntuales antes de confirmar.
+### 4.4 Extracción de preguntas por examen
 
-## 4.5 Confirmar examen
-Al confirmar:
+En detalle de histórico:
 
-- Se toma el contenido de `sorteo_temporal`.
-- Se guarda en `examen_sorteado` asociado al `examen_id`.
-- El campo `proceso` se completa con el proceso del examen (si existe), con fallback al proceso de la pregunta.
+- **Descargar ZIP (Windows/Cliente)**
+  - genera zip agrupado por asignatura.
+  - descarga al navegador del usuario.
 
-## 4.6 Refrescar y enviar preguntas
-Al ejecutar cierre:
-
-1. Toma `idpregunta` de `examen_sorteado`.
-2. Inserta/actualiza en `preguntas_sorteadas` (`id_pregunta`).
-3. Vacía `examen_sorteado`.
-4. Vacía `sorteo_temporal`.
-
-Resultado: se conserva trazabilidad de preguntas usadas para evitar reutilización en sorteos futuros.
+- **Extraer a carpeta SORTEO**
+  - copia en servidor a carpeta predeterminada:
+    - `/home/vboxuser/Desktop/SORTEO`
+    - fallback: `storage/app/SORTEO`
+  - copia agrupando por asignatura.
 
 ---
 
-## 5. Interfaz de administración (Filament)
+## 5. Vistas/recursos principales
 
-### Recursos principales
-
-- Asignaturas (CRUD)
-- Exámenes (CRUD con `nombre` + `proceso`)
-- Preguntas (CRUD con metadatos)
-
-### Página custom
-
-- Gestión de sorteo de examen:
-  - configura examen
-  - ejecuta sorteo
-  - revisa lista temporal
-  - confirma examen
-  - envía y limpia temporales
-
-Además, la pantalla incluye alertas de validación visibles (notificación + error bajo campo) para casos como capítulo mal digitado.
-
----
-
-## 6. Reglas importantes para operación
-
-1. El sistema depende de una estructura de carpetas de preguntas accesible por `ruta`.
-2. `preguntas_sorteadas` es la fuente para bloquear reutilización en sorteos.
-3. Capítulo es texto numérico (no entero), para soportar formato con cero inicial.
-4. Dificultad operativa:
-   - 1 = Facil
-   - 2 = Normal
-   - 3 = Dificil
-
----
-
-## 7. Ruta de panel
-
-Panel administrativo disponible en:
-
-- `/admin`
-
-Página de sorteo:
+- `/admin/preguntas`
+  - columnas y filtros: asignatura, dificultad, estado sorteada/no sorteada.
+  - carga masiva Excel.
 
 - `/admin/gestion-sorteo-examen`
+  - sorteo, confirmación de preguntas, gestión de examen_sorteado, confirmar examen.
+
+- `/admin/historial-examenes`
+  - detalle histórico y extracción (ZIP/servidor).
 
 ---
 
-## 8. Estado actual
+## 6. Reglas operativas
 
-El flujo end-to-end de gestión de preguntas y generación de examen está funcional:
-
-- registro de catálogo y preguntas
-- sorteo controlado
-- revisión manual
-- confirmación
-- persistencia histórica de usadas
-
-Pendientes futuros recomendados (opcionales):
-
-- reportes por examen/proceso
-- exportación (PDF/Excel) del examen sorteado
-- auditoría de usuario/fecha por acción
-- reglas avanzadas de balance por tema/subtema
+1. `ruta` debe apuntar a carpetas reales accesibles por el servidor para extracción directa.
+2. Para usuarios Windows cliente, preferir **Descargar ZIP**.
+3. `preguntas_sorteadas` bloquea reutilización futura en sorteo.
+4. Dificultad siempre se persiste en texto: `Facil`, `Normal`, `Dificil`.

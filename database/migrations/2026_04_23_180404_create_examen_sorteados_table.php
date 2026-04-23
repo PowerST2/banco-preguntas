@@ -27,7 +27,7 @@ return new class extends Migration
             $table->string('capitulo', 150)->nullable();
             $table->string('tema', 150)->nullable();
             $table->string('sub_tema', 150)->nullable();
-            $table->smallInteger('grado_dificultad')->nullable();
+            $table->string('grado_dificultad', 20)->nullable();
             $table->text('clave')->nullable();
             $table->text('proceso')->nullable();
             $table->text('ruta')->nullable();

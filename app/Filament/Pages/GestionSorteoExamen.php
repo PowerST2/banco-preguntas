@@ -31,7 +31,7 @@ class GestionSorteoExamen extends Page
 
     public ?string $tema = null;
 
-    public ?int $gradoDificultad = null;
+    public ?string $gradoDificultad = null;
 
     public int $cantidad = 1;
 
@@ -50,10 +50,21 @@ class GestionSorteoExamen extends Page
      */
     public array $sorteoTemporal = [];
 
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    public array $examenSorteado = [];
+
     public function mount(): void
     {
         $this->loadCatalogos();
         $this->refreshSorteoTemporal();
+        $this->refreshExamenSorteado();
+    }
+
+    public function updatedExamenId(): void
+    {
+        $this->refreshExamenSorteado();
     }
 
     public function loadCatalogos(): void
@@ -81,6 +92,24 @@ class GestionSorteoExamen extends Page
             ->all();
     }
 
+    public function refreshExamenSorteado(): void
+    {
+        if (! $this->examenId) {
+            $this->examenSorteado = [];
+
+            return;
+        }
+
+        $this->examenSorteado = DB::table('examen_sorteado as es')
+            ->leftJoin('asignaturas as a', 'a.id', '=', 'es.asignatura_id')
+            ->where('es.examen_id', $this->examenId)
+            ->orderByDesc('es.created_at')
+            ->select('es.*', 'a.nombre as asignatura_nombre')
+            ->get()
+            ->map(fn ($row): array => (array) $row)
+            ->all();
+    }
+
     public function sortearPreguntas(): void
     {
         $validator = Validator::make([
@@ -91,7 +120,7 @@ class GestionSorteoExamen extends Page
         ], [
             'asignatura_id' => ['required', 'exists:asignaturas,id'],
             'capitulo' => ['required', 'regex:/^[0-9]{2,}$/'],
-            'grado_dificultad' => ['required', 'integer', 'in:1,2,3'],
+            'grado_dificultad' => ['required', 'in:Facil,Normal,Dificil'],
             'cantidad' => ['required', 'integer', 'min:1'],
         ], [
             'asignatura_id' => 'asignatura',
@@ -226,24 +255,36 @@ class GestionSorteoExamen extends Page
                     ]
                 );
             }
+
+            DB::table('sorteo_temporal')->truncate();
         });
 
+        $this->refreshSorteoTemporal();
+        $this->refreshExamenSorteado();
+
         Notification::make()
-            ->title('Examen confirmado')
-            ->body('Las preguntas del sorteo temporal fueron guardadas en examen_sorteado.')
+            ->title('Preguntas confirmadas')
+            ->body('Las preguntas pasaron a examen_sorteado y se limpió el sorteo temporal.')
             ->success()
             ->send();
     }
 
     public function refrescarYEnviarPreguntas(): void
     {
-        $ids = DB::table('examen_sorteado')
-            ->select('idpregunta')
-            ->distinct()
-            ->pluck('idpregunta')
+        Validator::make([
+            'examen_id' => $this->examenId,
+        ], [
+            'examen_id' => ['required', 'exists:examenes,id'],
+        ], [
+            'examen_id' => 'examen',
+        ])->validate();
+
+        $registrosExamenSorteado = DB::table('examen_sorteado')
+            ->where('examen_id', $this->examenId)
+            ->get()
             ->all();
 
-        if (empty($ids)) {
+        if (empty($registrosExamenSorteado)) {
             Notification::make()
                 ->title('No hay preguntas en examen_sorteado para enviar')
                 ->warning()
@@ -254,8 +295,14 @@ class GestionSorteoExamen extends Page
 
         $now = now();
 
-        DB::transaction(function () use ($ids, $now): void {
-            $payload = collect($ids)
+        DB::transaction(function () use ($registrosExamenSorteado, $now): void {
+            $ids = collect($registrosExamenSorteado)
+                ->pluck('idpregunta')
+                ->unique()
+                ->values()
+                ->all();
+
+            $payloadSorteadas = collect($ids)
                 ->map(fn ($idPregunta): array => [
                     'id_pregunta' => $idPregunta,
                     'created_at' => $now,
@@ -263,21 +310,68 @@ class GestionSorteoExamen extends Page
                 ])
                 ->all();
 
+            $payloadHistorico = collect($registrosExamenSorteado)
+                ->map(fn ($row): array => [
+                    'examen_id' => $row->examen_id,
+                    'idpregunta' => $row->idpregunta,
+                    'codificacion' => $row->codificacion,
+                    'asignatura_id' => $row->asignatura_id,
+                    'capitulo' => $row->capitulo,
+                    'tema' => $row->tema,
+                    'sub_tema' => $row->sub_tema,
+                    'grado_dificultad' => $row->grado_dificultad,
+                    'clave' => $row->clave,
+                    'proceso' => $row->proceso,
+                    'ruta' => $row->ruta,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])
+                ->all();
+
+            DB::table('examenes_historico')->insert($payloadHistorico);
+
             DB::table('preguntas_sorteadas')->upsert(
-                $payload,
+                $payloadSorteadas,
                 ['id_pregunta'],
                 ['updated_at']
             );
 
-            DB::table('examen_sorteado')->truncate();
+            DB::table('examen_sorteado')
+                ->where('examen_id', $this->examenId)
+                ->delete();
             DB::table('sorteo_temporal')->truncate();
         });
 
         $this->refreshSorteoTemporal();
+        $this->refreshExamenSorteado();
 
         Notification::make()
-            ->title('Proceso completado')
-            ->body('Se enviaron las preguntas a preguntas_sorteadas y se limpiaron las tablas temporales.')
+            ->title('Examen confirmado')
+            ->body('Las preguntas del examen pasaron a preguntas_sorteadas y se registraron en examenes_historico.')
+            ->success()
+            ->send();
+    }
+
+    public function quitarDeExamenSorteado(int $idPregunta): void
+    {
+        if (! $this->examenId) {
+            Notification::make()
+                ->title('Selecciona un examen primero')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        DB::table('examen_sorteado')
+            ->where('examen_id', $this->examenId)
+            ->where('idpregunta', $idPregunta)
+            ->delete();
+
+        $this->refreshExamenSorteado();
+
+        Notification::make()
+            ->title('Pregunta removida de examen_sorteado')
             ->success()
             ->send();
     }
@@ -285,5 +379,10 @@ class GestionSorteoExamen extends Page
     public function getCantidadEnSorteoProperty(): int
     {
         return count($this->sorteoTemporal);
+    }
+
+    public function getCantidadEnExamenSorteadoProperty(): int
+    {
+        return count($this->examenSorteado);
     }
 }

@@ -15,6 +15,8 @@ class PreguntaForm
             ->components([
                 TextInput::make('codificacion')
                     ->label('Codificación')
+                    ->required()
+                    ->unique(ignoreRecord: true)
                     ->maxLength(100),
                 Select::make('asignatura_id')
                     ->label('Asignatura')
@@ -37,9 +39,9 @@ class PreguntaForm
                 Select::make('grado_dificultad')
                     ->label('Grado de dificultad')
                     ->options([
-                        1 => 'Facil',
-                        2 => 'Normal',
-                        3 => 'Dificil',
+                        'Facil' => 'Facil',
+                        'Normal' => 'Normal',
+                        'Dificil' => 'Dificil',
                     ])
                     ->required()
                     ->native(false),

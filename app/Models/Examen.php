@@ -18,4 +18,9 @@ class Examen extends Model
     {
         return $this->hasMany(ExamenSorteado::class, 'examen_id');
     }
+
+    public function preguntasHistorico(): HasMany
+    {
+        return $this->hasMany(ExamenHistorico::class, 'examen_id');
+    }
 }

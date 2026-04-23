@@ -12,7 +12,7 @@ return new class extends Migration {
             $table->bigInteger('idpregunta');
 
             $table->string('asignatura',150)->nullable();
-            $table->smallInteger('grado_dificultad')->nullable();
+            $table->string('grado_dificultad',20)->nullable();
             $table->string('capitulo',150)->nullable();
 
             $table->text('ruta')->nullable();
